@@ -15,11 +15,9 @@
 
 import PgInit
 
-import Control.Monad.Logger (runLoggingT)
 import Data.Aeson
 import qualified Data.ByteString as BS
 import Data.Fixed
-import Data.Maybe (fromMaybe)
 import Data.IntMap (IntMap)
 import qualified Data.Text as T
 import Data.Time
@@ -227,6 +225,6 @@ main = do
         PgIntervalTest.specs
         ArrayAggTest.specs
         GeneratedColumnTestSQL.specsWith runConnAssert
-        
+
         -- Lazy Transaction Tests (actual SQL behavior)
         LazyTransactionTest.specs
