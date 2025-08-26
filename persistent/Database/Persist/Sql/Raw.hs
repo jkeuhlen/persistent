@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Database.Persist.Sql.Raw where
 
 import Control.Exception (throwIO)
@@ -17,6 +19,7 @@ import Database.Persist
 import Database.Persist.Sql.Class
 import Database.Persist.Sql.Types
 import Database.Persist.Sql.Types.Internal
+import Database.Persist.SqlBackend.Internal (SqlBackendHooks(..))
 import Database.Persist.SqlBackend.Internal.StatementCache
 
 rawQuery
@@ -118,7 +121,37 @@ getStmtConn conn sql = do
 
             liftIO $ statementCacheInsert (connStmtMap conn) cacheK stmt
             pure stmt
-    (hookGetStatement $ connHooks conn) conn sql stmt
+    hookedStmt <- (hookGetStatement $ connHooks conn) conn sql stmt
+    wrapStatementWithBeforeExecute (connHooks conn) hookedStmt
+
+-- | Wrap a 'Statement' so that 'hookBeforeExecute' runs *exactly once*
+-- the first time any of its execution entry-points are invoked.
+wrapStatementWithBeforeExecute
+  :: SqlBackendHooks
+  -> Statement
+  -> IO Statement
+wrapStatementWithBeforeExecute hooks st0 = do
+  -- guard so the hook runs only once
+  firedRef <- newIORef False
+  let once :: IO ()
+      once = do
+        fired <- readIORef firedRef
+        if fired then pure () else writeIORef firedRef True >> hookBeforeExecute hooks
+
+      exec :: [PersistValue] -> IO Int64
+      exec xs = once >> stmtExecute st0 xs
+
+      -- Preserve the polymorphic type of stmtQuery
+      query :: forall m. (MonadIO m) => [PersistValue] -> Acquire (ConduitM () [PersistValue] m ())
+      query xs = do
+        -- Run the hook before acquiring the query resource
+        _ <- mkAcquire once (\_ -> pure ())
+        stmtQuery st0 xs
+
+  pure st0
+    { stmtExecute = exec
+    , stmtQuery   = query
+    }
 
 -- | Execute a raw SQL statement and return its results as a
 -- list. If you do not expect a return value, use of

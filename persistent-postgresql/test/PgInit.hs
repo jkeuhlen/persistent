@@ -9,6 +9,8 @@ module PgInit
     , runConn_
     , runConnAssert
     , runConnAssertUseConf
+    , dockerPg
+    , isTravis
     , MonadIO
     , persistSettings
     , MkPersistSettings (..)

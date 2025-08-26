@@ -142,14 +142,22 @@ data SqlBackend = SqlBackend
     -- behaviour of a backend.
     }
 
-newtype SqlBackendHooks = SqlBackendHooks
+data SqlBackendHooks = SqlBackendHooks
     { hookGetStatement :: SqlBackend -> Text -> Statement -> IO Statement
+    -- ^ Allows backends and libraries to wrap a prepared 'Statement'.
+    -- This runs at *prepare time* (may happen even if nothing is executed).
+    , hookBeforeExecute :: IO ()
+    -- ^ Runs at *execution time* immediately before any 'Statement'
+    -- actually executes (execute/query/executeMany). Implementations may
+    -- perform per-transaction setup like BEGIN; callers should ensure it
+    -- runs at most once per transactional block.
     }
 
 emptySqlBackendHooks :: SqlBackendHooks
 emptySqlBackendHooks =
     SqlBackendHooks
         { hookGetStatement = \_ _ s -> pure s
+        , hookBeforeExecute = pure ()
         }
 
 -- | A function for creating a value of the 'SqlBackend' type. You should prefer

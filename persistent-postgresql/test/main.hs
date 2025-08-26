@@ -15,9 +15,11 @@
 
 import PgInit
 
+import Control.Monad.Logger (runLoggingT)
 import Data.Aeson
 import qualified Data.ByteString as BS
 import Data.Fixed
+import Data.Maybe (fromMaybe)
 import Data.IntMap (IntMap)
 import qualified Data.Text as T
 import Data.Time
@@ -39,6 +41,7 @@ import qualified HtmlTest
 import qualified ImplicitUuidSpec
 import qualified JSONTest
 import qualified LargeNumberTest
+import qualified LazyTransactionTest
 import qualified LongIdentifierTest
 import qualified MaxLenTest
 import qualified MaybeFieldDefsTest
@@ -224,3 +227,6 @@ main = do
         PgIntervalTest.specs
         ArrayAggTest.specs
         GeneratedColumnTestSQL.specsWith runConnAssert
+        
+        -- Lazy Transaction Tests
+        LazyTransactionTest.specsWith runConnAssert

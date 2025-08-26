@@ -1,25 +1,54 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
-module Database.Persist.Sql.Run where
+module Database.Persist.Sql.Run 
+    ( -- * Standard transaction functions
+      runSqlPool
+    , runSqlPoolWithIsolation
+    , runSqlPoolNoTransaction
+      -- * Lazy transaction functions
+    , runSqlPoolLazy
+    , runSqlPoolWithIsolationLazy
+      -- * Lower-level functions
+    , runSqlPoolWithHooks
+    , runSqlPoolWithExtensibleHooks
+    , runSqlConn
+    , runSqlConnWithIsolation
+    , runSqlPersistM
+    , runSqlPersistMPool
+    , liftSqlPersistMPool
+    , withSqlPool
+    , withSqlPoolWithConfig
+    , createSqlPool
+    , createSqlPoolWithConfig
+    , withSqlConn
+    , close'
+    , rawAcquireSqlConn
+    , acquireSqlConn
+    , acquireSqlConnWithIsolation
+    ) where
 
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Control.Monad.IO.Unlift
 import Control.Monad.Logger.CallStack
 import Control.Monad.Reader (MonadReader)
 import qualified Control.Monad.Reader as MonadReader
-import Control.Monad.Trans.Reader hiding (local)
+import Control.Monad.Trans.Reader (ReaderT(..), runReaderT, withReaderT)
 import Control.Monad.Trans.Resource
 import Data.Acquire (Acquire, ReleaseType (..), mkAcquireType, with)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Pool as P
 import qualified Data.Text as T
 import qualified UnliftIO.Exception as UE
 
-import Database.Persist.Class.PersistStore
+import Database.Persist.Class.PersistStore (BackendCompatible(..), HasPersistBackend(..), IsPersistBackend(..))
 import Database.Persist.Sql.Raw
 import Database.Persist.Sql.Types
 import Database.Persist.Sql.Types.Internal
+import Database.Persist.SqlBackend (setConnHooks)
+import Database.Persist.SqlBackend.Internal (SqlBackendHooks(..))
 import Database.Persist.SqlBackend.Internal.SqlPoolHooks
 import Database.Persist.SqlBackend.Internal.StatementCache
 
@@ -59,6 +88,79 @@ runSqlPoolNoTransaction
     => ReaderT backend m a -> Pool backend -> Maybe IsolationLevel -> m a
 runSqlPoolNoTransaction r pconn i =
     runSqlPoolWithHooks r pconn i (\_ -> pure ()) (\_ -> pure ()) (\_ _ -> pure ())
+
+-- | Like 'runSqlPool', but begins a transaction lazily on the first actual SQL execution.
+-- 
+-- This avoids unnecessary BEGIN/COMMIT roundtrips for code paths that don't execute SQL.
+-- For example:
+-- 
+-- * @runSqlPoolLazy (pure ())@ will not issue any BEGIN/COMMIT
+-- * @runSqlPoolLazy (rawExecute "SELECT 1" [])@ will BEGIN just before the SELECT
+--
+-- @since 2.17.2.0
+runSqlPoolLazy
+    :: forall backend m a
+     . (MonadUnliftIO m, BackendCompatible SqlBackend backend)
+    => ReaderT backend m a -> Pool backend -> m a
+runSqlPoolLazy r pconn = 
+    runSqlPoolWithIsolationLazy r pconn Nothing
+
+-- | Like 'runSqlPoolWithIsolation', but begins a transaction lazily on the first actual SQL execution.
+--
+-- @since 2.17.2.0
+runSqlPoolWithIsolationLazy
+    :: forall backend m a
+     . (MonadUnliftIO m, BackendCompatible SqlBackend backend)
+    => ReaderT backend m a -> Pool backend -> Maybe IsolationLevel -> m a
+runSqlPoolWithIsolationLazy r pconn mi =
+    withRunInIO $ \runInIO ->
+        withResource pconn $ \conn -> UE.mask $ \restore -> do
+            -- Track if we actually began a transaction
+            beganRef <- newIORef False
+            
+            let sqlBackend = projectBackend conn
+                getter = getStmtConn sqlBackend
+                
+            -- Create a SqlBackend with lazy BEGIN behavior
+            -- The hook will be called by wrapStatementWithBeforeExecute in getStmtConn
+            let hooks0  = connHooks sqlBackend
+                beginOnce = do
+                    began <- readIORef beganRef
+                    if began then pure () else do
+                        connBegin sqlBackend getter mi
+                        writeIORef beganRef True
+                hooks1 = hooks0 { hookBeforeExecute = beginOnce }
+                sqlBackend' = setConnHooks hooks1 sqlBackend
+            
+            -- Create a modified backend that projects to our lazy SqlBackend
+            -- We use a local wrapper type to achieve this
+            let conn' = ModifiedBackend sqlBackend' conn
+            
+            a <- restore (runInIO (runReaderT (withReaderT unModifiedBackend r) conn')) 
+                    `UE.catchAny` \e -> do
+                        began <- readIORef beganRef
+                        when began $ connRollback sqlBackend getter
+                        UE.throwIO e
+                    
+            began <- readIORef beganRef
+            when began $ connCommit sqlBackend getter
+            pure a
+
+-- | A wrapper to substitute a modified SqlBackend while preserving the backend type
+data ModifiedBackend backend = ModifiedBackend 
+    { modifiedSqlBackend :: SqlBackend
+    , originalBackend :: backend  
+    }
+
+unModifiedBackend :: ModifiedBackend backend -> backend
+unModifiedBackend = originalBackend
+
+instance (BackendCompatible SqlBackend backend) => BackendCompatible SqlBackend (ModifiedBackend backend) where
+    projectBackend = modifiedSqlBackend
+
+instance HasPersistBackend (ModifiedBackend backend) where
+    type BaseBackend (ModifiedBackend backend) = SqlBackend
+    persistBackend = modifiedSqlBackend
 
 rawRunSqlPool
     :: forall backend m a
