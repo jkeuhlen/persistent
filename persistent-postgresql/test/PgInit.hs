@@ -7,8 +7,11 @@
 module PgInit
     ( runConn
     , runConn_
+    , runConnLazy
     , runConnAssert
     , runConnAssertUseConf
+    , runConnInternal
+    , RunConnType(..)
     , dockerPg
     , isTravis
     , MonadIO
@@ -153,6 +156,10 @@ runConn f = runConn_ f >>= const (return ())
 runConn_ :: (MonadUnliftIO m) => SqlPersistT (LoggingT m) t -> m t
 runConn_ f = runConnInternal RunConnBasic f
 
+-- | Run a lazy transaction that only starts when SQL is needed
+runConnLazy :: (MonadUnliftIO m) => SqlPersistT (LoggingT m) t -> m t
+runConnLazy f = runConnInternalLazy RunConnBasic f
+
 -- | Data type to switch between pool creation functions, to ease testing both.
 data RunConnType
     = -- | Use 'withPostgresqlPool'
@@ -163,7 +170,17 @@ data RunConnType
 
 runConnInternal
     :: (MonadUnliftIO m) => RunConnType -> SqlPersistT (LoggingT m) t -> m t
-runConnInternal connType f = do
+runConnInternal connType f = runConnInternalHelper connType f False
+
+-- | Like runConnInternal but uses lazy transactions
+runConnInternalLazy
+    :: (MonadUnliftIO m) => RunConnType -> SqlPersistT (LoggingT m) t -> m t
+runConnInternalLazy connType f = runConnInternalHelper connType f True
+
+-- | Helper function that can run either eager or lazy transactions
+runConnInternalHelper
+    :: (MonadUnliftIO m) => RunConnType -> SqlPersistT (LoggingT m) t -> Bool -> m t
+runConnInternalHelper connType f useLazy = do
     travis <- liftIO isTravis
     let
         debugPrint = not travis && _debugOn
@@ -181,10 +198,11 @@ runConnInternal connType f = do
     flip runLoggingT (\_ _ _ s -> printDebug s) $ do
         logInfoN (if travis then "Running in CI" else "CI not detected")
         let
+            runFunc = if useLazy then runSqlPoolLazy else runSqlPool
             go =
                 case connType of
                     RunConnBasic ->
-                        withPostgresqlPool connString poolSize $ runSqlPool f
+                        withPostgresqlPool connString poolSize $ runFunc f
                     RunConnConf -> do
                         let
                             conf =
@@ -195,7 +213,7 @@ runConnInternal connType f = do
                                     , pgPoolSize = poolSize
                                     }
                             hooks = defaultPostgresConfHooks
-                        withPostgresqlPoolWithConf conf hooks (runSqlPool f)
+                        withPostgresqlPoolWithConf conf hooks (runFunc f)
         -- horrifying hack :( postgresql is having weird connection failures in
         -- CI, for no reason that i can determine. see this PR for notes:
         -- https://github.com/yesodweb/persistent/pull/1197

@@ -228,5 +228,5 @@ main = do
         ArrayAggTest.specs
         GeneratedColumnTestSQL.specsWith runConnAssert
         
-        -- Lazy Transaction Tests
-        LazyTransactionTest.specsWith runConnAssert
+        -- Lazy Transaction Tests (actual SQL behavior)
+        LazyTransactionTest.specs
