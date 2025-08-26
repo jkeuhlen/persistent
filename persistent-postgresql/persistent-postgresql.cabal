@@ -59,6 +59,7 @@ test-suite test
     EquivalentTypeTestPostgres
     ImplicitUuidSpec
     JSONTest
+    LazyTransactionTest
     MigrationReferenceSpec
     PgInit
     PgIntervalTest

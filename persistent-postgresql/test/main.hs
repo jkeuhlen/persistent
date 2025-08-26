@@ -39,6 +39,7 @@ import qualified HtmlTest
 import qualified ImplicitUuidSpec
 import qualified JSONTest
 import qualified LargeNumberTest
+import qualified LazyTransactionTest
 import qualified LongIdentifierTest
 import qualified MaxLenTest
 import qualified MaybeFieldDefsTest
@@ -224,3 +225,6 @@ main = do
         PgIntervalTest.specs
         ArrayAggTest.specs
         GeneratedColumnTestSQL.specsWith runConnAssert
+
+        -- Lazy Transaction Tests (actual SQL behavior)
+        LazyTransactionTest.specs
