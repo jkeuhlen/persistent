@@ -1,5 +1,10 @@
 # Changelog for persistent
 
+# Unreleased 
+* [#1608](https://github.com/yesodweb/persistent/pull/1608)
+  * Improves documentation on getBy with nullable fields
+  * Updates the warning text present when you try to make a Unique field that is nullable
+
 # 2.17.1.0
 
 * [#1601](https://github.com/yesodweb/persistent/pull/1601)
