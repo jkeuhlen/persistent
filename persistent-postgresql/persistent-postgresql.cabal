@@ -60,6 +60,7 @@ test-suite test
     ImplicitUuidSpec
     JSONTest
     MigrationReferenceSpec
+    NullsNotDistinctTest
     PgInit
     PgIntervalTest
     UpsertWhere

@@ -372,7 +372,7 @@ data AlterColumn
 --
 -- @since 2.17.1.0
 data AlterTable
-    = AddUniqueConstraint ConstraintNameDB [FieldNameDB]
+    = AddUniqueConstraint ConstraintNameDB [FieldNameDB] [Attr]
     | DropConstraint ConstraintNameDB
     deriving (Show, Eq)
 
@@ -430,8 +430,8 @@ migrateStructured allDefs getter entity = do
     createText newcols fdefs_ udspair =
         (addTable newcols entity) : uniques ++ references ++ foreignsAlt
       where
-        uniques = flip concatMap udspair $ \(uname, ucols) ->
-            [AlterTable name $ AddUniqueConstraint uname ucols]
+        uniques = flip concatMap udspair $ \(uname, ucols, uattrs) ->
+            [AlterTable name $ AddUniqueConstraint uname ucols uattrs]
         references =
             mapMaybe
                 ( \Column{cName, cReference} ->
@@ -464,8 +464,8 @@ mockMigrateStructured allDefs entity = migrationText
     createText newcols fdefs udspair =
         (addTable newcols entity) : uniques ++ references ++ foreignsAlt
       where
-        uniques = flip concatMap udspair $ \(uname, ucols) ->
-            [AlterTable name $ AddUniqueConstraint uname ucols]
+        uniques = flip concatMap udspair $ \(uname, ucols, uattrs) ->
+            [AlterTable name $ AddUniqueConstraint uname ucols uattrs]
         references =
             mapMaybe
                 ( \Column{cName, cReference} ->
@@ -508,7 +508,7 @@ mayDefault def = case def of
 getAlters
     :: [EntityDef]
     -> EntityDef
-    -> ([Column], [(ConstraintNameDB, [FieldNameDB])])
+    -> ([Column], [(ConstraintNameDB, [FieldNameDB], [Attr])])
     -> ([Column], [(ConstraintNameDB, [FieldNameDB])])
     -> ([AlterColumn], [AlterTable])
 getAlters defs def (c1, u1) (c2, u2) =
@@ -523,15 +523,15 @@ getAlters defs def (c1, u1) (c2, u2) =
             alters ++ getAltersC news old'
 
     getAltersU
-        :: [(ConstraintNameDB, [FieldNameDB])]
+        :: [(ConstraintNameDB, [FieldNameDB], [Attr])]
         -> [(ConstraintNameDB, [FieldNameDB])]
         -> [AlterTable]
     getAltersU [] old =
         map DropConstraint $ filter (not . isManual) $ map fst old
-    getAltersU ((name, cols) : news) old =
+    getAltersU ((name, cols, attrs) : news) old =
         case lookup name old of
             Nothing ->
-                AddUniqueConstraint name cols : getAltersU news old
+                AddUniqueConstraint name cols attrs : getAltersU news old
             Just ocols ->
                 let
                     old' = filter (\(x, _) -> x /= name) old
@@ -540,7 +540,7 @@ getAlters defs def (c1, u1) (c2, u2) =
                         then getAltersU news old'
                         else
                             DropConstraint name
-                                : AddUniqueConstraint name cols
+                                : AddUniqueConstraint name cols attrs
                                 : getAltersU news old'
 
     -- Don't drop constraints which were manually added.
@@ -632,8 +632,8 @@ safeToRemove def (FieldNameDB colName) =
             _ ->
                 []
 
-udToPair :: UniqueDef -> (ConstraintNameDB, [FieldNameDB])
-udToPair ud = (uniqueDBName ud, map snd $ NEL.toList $ uniqueFields ud)
+udToPair :: UniqueDef -> (ConstraintNameDB, [FieldNameDB], [Attr])
+udToPair ud = (uniqueDBName ud, map snd $ NEL.toList $ uniqueFields ud, uniqueAttrs ud)
 
 -- | Get the references to be added to a table for the given column.
 getAddReference
@@ -739,13 +739,15 @@ showAlterDb (AlterColumn t ac) =
 showAlterDb (AlterTable t at) = (False, showAlterTable t at)
 
 showAlterTable :: EntityNameDB -> AlterTable -> Text
-showAlterTable table (AddUniqueConstraint cname cols) =
+showAlterTable table (AddUniqueConstraint cname cols attrs) =
     T.concat
         [ "ALTER TABLE "
         , escapeE table
         , " ADD CONSTRAINT "
         , escapeC cname
-        , " UNIQUE("
+        , " UNIQUE"
+        , if "!nullsNotDistinct" `elem` attrs then " NULLS NOT DISTINCT" else ""
+        , "("
         , T.intercalate "," $ map escapeF cols
         , ")"
         ]

@@ -48,6 +48,7 @@ import qualified MigrationReferenceSpec
 import qualified MigrationTest
 import qualified MpsCustomPrefixTest
 import qualified MpsNoPrefixTest
+import qualified NullsNotDistinctTest
 import qualified PersistUniqueTest
 import qualified PersistentTest
 import qualified PgIntervalTest
@@ -125,6 +126,7 @@ main = do
             , EmbedOrderTest.embedOrderMigrate
             , LargeNumberTest.numberMigrate
             , UniqueTest.uniqueMigrate
+            , NullsNotDistinctTest.nullsNotDistinctMigrate
             , MaxLenTest.maxlenMigrate
             , MaybeFieldDefsTest.maybeFieldDefMigrate
             , TypeLitFieldDefsTest.typeLitFieldDefsMigrate
@@ -223,4 +225,5 @@ main = do
         UpsertWhere.specs
         PgIntervalTest.specs
         ArrayAggTest.specs
+        NullsNotDistinctTest.specs
         GeneratedColumnTestSQL.specsWith runConnAssert
