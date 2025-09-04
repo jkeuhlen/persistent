@@ -70,12 +70,14 @@ instance PersistUniqueWrite SqlBackend where
         fieldNames = toList $ fmap snd $ persistUniqueToFieldNames uniq
         uvals = persistUniqueToValues uniq
         -- Check if this unique constraint has !nullsNotDistinct attribute
-        hasNullsNotDistinct = 
-            let uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
+        hasNullsNotDistinct =
+            let
+                uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
                 matchingUnique = find (matchesUnique uniqueFieldNames) (getEntityUniques t)
-            in case matchingUnique of
-                Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
-                Nothing -> False
+             in
+                case matchingUnique of
+                    Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
+                    Nothing -> False
         -- Check if a UniqueDef matches the field names of our Unique value
         matchesUnique uniqueFieldNames uniqueDef =
             toList (uniqueFields uniqueDef) == uniqueFieldNames
@@ -157,12 +159,14 @@ instance PersistUniqueRead SqlBackend where
         fieldNames = toList $ fmap snd $ persistUniqueToFieldNames uniq
         uvals = persistUniqueToValues uniq
         -- Check if this unique constraint has !nullsNotDistinct attribute
-        hasNullsNotDistinct = 
-            let uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
+        hasNullsNotDistinct =
+            let
+                uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
                 matchingUnique = find (matchesUnique uniqueFieldNames) (getEntityUniques t)
-            in case matchingUnique of
-                Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
-                Nothing -> False
+             in
+                case matchingUnique of
+                    Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
+                    Nothing -> False
         -- Check if a UniqueDef matches the field names of our Unique value
         matchesUnique uniqueFieldNames uniqueDef =
             toList (uniqueFields uniqueDef) == uniqueFieldNames
@@ -193,12 +197,14 @@ instance PersistUniqueRead SqlBackend where
         t = entityDef $ dummyFromUnique uniq
         fieldNames = toList $ fmap snd $ persistUniqueToFieldNames uniq
         uvals = persistUniqueToValues uniq
-        hasNullsNotDistinct = 
-            let uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
+        hasNullsNotDistinct =
+            let
+                uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
                 matchingUnique = find (matchesUnique uniqueFieldNames) (getEntityUniques t)
-            in case matchingUnique of
-                Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
-                Nothing -> False
+             in
+                case matchingUnique of
+                    Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
+                    Nothing -> False
         matchesUnique uniqueFieldNames uniqueDef =
             toList (uniqueFields uniqueDef) == uniqueFieldNames
 
