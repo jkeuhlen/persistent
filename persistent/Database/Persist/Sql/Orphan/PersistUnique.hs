@@ -19,8 +19,6 @@ import Database.Persist.Class.PersistUnique
     , defaultUpsertBy
     , persistUniqueKeyValues
     )
-import Database.Persist.EntityDef (getEntityUniques)
-import Database.Persist.Types (uniqueAttrs, uniqueFields)
 
 import Database.Persist.Sql.Orphan.PersistStore (withRawQuery)
 import Database.Persist.Sql.Raw
@@ -32,6 +30,37 @@ import Database.Persist.Sql.Util
     , parseExistsResult
     , updatePersistValue
     )
+
+checkHasNullsNotDistinct
+    :: (PersistEntity record) => Unique record -> EntityDef -> Bool
+checkHasNullsNotDistinct uniq t =
+    let
+        uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
+        matchingUnique = find (matchesUnique uniqueFieldNames) (getEntityUniques t)
+     in
+        case matchingUnique of
+            Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
+            Nothing -> False
+  where
+    matchesUnique uniqueFieldNames uniqueDef =
+        toList (uniqueFields uniqueDef) == uniqueFieldNames
+
+mkUniqueClause :: SqlBackend -> Bool -> FieldNameDB -> PersistValue -> T.Text
+mkUniqueClause conn hasNullsNotDistinct fieldName val
+    | connRDBMS conn == "postgresql" && val == PersistNull && hasNullsNotDistinct =
+        connEscapeFieldName conn fieldName `mappend` " IS NOT DISTINCT FROM ?"
+    | otherwise =
+        connEscapeFieldName conn fieldName `mappend` "=?"
+
+buildUniqueWhereClause
+    :: (PersistEntity record) => SqlBackend -> Unique record -> EntityDef -> T.Text
+buildUniqueWhereClause conn uniq t =
+    T.intercalate " AND " $
+        zipWith (mkUniqueClause conn hasNullsNotDistinct) fieldNames uvals
+  where
+    fieldNames = toList $ fmap snd $ persistUniqueToFieldNames uniq
+    uvals = persistUniqueToValues uniq
+    hasNullsNotDistinct = checkHasNullsNotDistinct uniq t
 
 instance PersistUniqueWrite SqlBackend where
     upsertBy uniqueKey record updates = do
@@ -67,31 +96,12 @@ instance PersistUniqueWrite SqlBackend where
         rawExecute sql' vals
       where
         t = entityDef $ dummyFromUnique uniq
-        fieldNames = toList $ fmap snd $ persistUniqueToFieldNames uniq
-        uvals = persistUniqueToValues uniq
-        -- Check if this unique constraint has !nullsNotDistinct attribute
-        hasNullsNotDistinct =
-            let
-                uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
-                matchingUnique = find (matchesUnique uniqueFieldNames) (getEntityUniques t)
-             in
-                case matchingUnique of
-                    Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
-                    Nothing -> False
-        -- Check if a UniqueDef matches the field names of our Unique value
-        matchesUnique uniqueFieldNames uniqueDef =
-            toList (uniqueFields uniqueDef) == uniqueFieldNames
-        go' conn fieldName val
-            | connRDBMS conn == "postgresql" && val == PersistNull && hasNullsNotDistinct =
-                connEscapeFieldName conn fieldName `mappend` " IS NOT DISTINCT FROM ?"
-            | otherwise =
-                connEscapeFieldName conn fieldName `mappend` "=?"
         sql conn =
             T.concat
                 [ "DELETE FROM "
                 , connEscapeTableName conn t
                 , " WHERE "
-                , T.intercalate " AND " $ zipWith (go' conn) fieldNames uvals
+                , buildUniqueWhereClause conn uniq t
                 ]
 
     putMany [] = return ()
@@ -132,7 +142,7 @@ instance PersistUniqueRead SqlBackend where
                     , " FROM "
                     , connEscapeTableName conn t
                     , " WHERE "
-                    , sqlClause conn
+                    , buildUniqueWhereClause conn uniq t
                     ]
             uvals = persistUniqueToValues uniq
         withRawQuery sql uvals $
@@ -147,29 +157,7 @@ instance PersistUniqueRead SqlBackend where
                                 liftIO $ throwIO $ PersistMarshalError err
                             Right r -> return $ Just r
       where
-        sqlClause conn =
-            T.intercalate " AND " $ zipWith (go conn) fieldNames uvals
-        -- For PostgreSQL with NULLS NOT DISTINCT, use IS NOT DISTINCT FROM
-        go conn fieldName val
-            | connRDBMS conn == "postgresql" && val == PersistNull && hasNullsNotDistinct =
-                connEscapeFieldName conn fieldName `mappend` " IS NOT DISTINCT FROM ?"
-            | otherwise =
-                connEscapeFieldName conn fieldName `mappend` "=?"
         t = entityDef $ dummyFromUnique uniq
-        fieldNames = toList $ fmap snd $ persistUniqueToFieldNames uniq
-        uvals = persistUniqueToValues uniq
-        -- Check if this unique constraint has !nullsNotDistinct attribute
-        hasNullsNotDistinct =
-            let
-                uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
-                matchingUnique = find (matchesUnique uniqueFieldNames) (getEntityUniques t)
-             in
-                case matchingUnique of
-                    Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
-                    Nothing -> False
-        -- Check if a UniqueDef matches the field names of our Unique value
-        matchesUnique uniqueFieldNames uniqueDef =
-            toList (uniqueFields uniqueDef) == uniqueFieldNames
 
     existsBy uniq = do
         conn <- ask
@@ -179,7 +167,7 @@ instance PersistUniqueRead SqlBackend where
                     [ "SELECT EXISTS(SELECT 1 FROM "
                     , connEscapeTableName conn t
                     , " WHERE "
-                    , sqlClause conn
+                    , buildUniqueWhereClause conn uniq t
                     , ")"
                     ]
             uvals = persistUniqueToValues uniq
@@ -187,26 +175,7 @@ instance PersistUniqueRead SqlBackend where
             mm <- CL.head
             return $ parseExistsResult mm sql "PersistUnique.existsBy"
       where
-        sqlClause conn =
-            T.intercalate " AND " $ zipWith (go conn) fieldNames uvals
-        go conn fieldName val
-            | connRDBMS conn == "postgresql" && val == PersistNull && hasNullsNotDistinct =
-                connEscapeFieldName conn fieldName `mappend` " IS NOT DISTINCT FROM ?"
-            | otherwise =
-                connEscapeFieldName conn fieldName `mappend` "=?"
         t = entityDef $ dummyFromUnique uniq
-        fieldNames = toList $ fmap snd $ persistUniqueToFieldNames uniq
-        uvals = persistUniqueToValues uniq
-        hasNullsNotDistinct =
-            let
-                uniqueFieldNames = toList $ persistUniqueToFieldNames uniq
-                matchingUnique = find (matchesUnique uniqueFieldNames) (getEntityUniques t)
-             in
-                case matchingUnique of
-                    Just uniqueDef -> "!nullsNotDistinct" `elem` uniqueAttrs uniqueDef
-                    Nothing -> False
-        matchesUnique uniqueFieldNames uniqueDef =
-            toList (uniqueFields uniqueDef) == uniqueFieldNames
 
 instance PersistUniqueRead SqlReadBackend where
     getBy uniq = withBaseBackend $ getBy uniq
