@@ -142,27 +142,28 @@ specs = describe "NULLS NOT DISTINCT support" $ do
                 `Hspec.shouldThrow` Hspec.anyException
 
         it
-            "standard unique getBy returns Nothing for NULL values (backwards compatibility)" $ do
-            runDb $ do
-                cleanDB
+            "standard unique getBy returns Nothing for NULL values (backwards compatibility)"
+            $ do
+                runDb $ do
+                    cleanDB
 
-                -- Insert a record with NULL email
-                _ <- insert $ StandardUnique "user1" Nothing
+                    -- Insert a record with NULL email
+                    _ <- insert $ StandardUnique "user1" Nothing
 
-                -- getBy with NULL should return Nothing (standard SQL behavior)
-                -- This ensures backwards compatibility - without !nullsNotDistinct,
-                -- getBy cannot find NULL values
-                result <- getBy $ UniqueStandardEmail "user1" Nothing
+                    -- getBy with NULL should return Nothing (standard SQL behavior)
+                    -- This ensures backwards compatibility - without !nullsNotDistinct,
+                    -- getBy cannot find NULL values
+                    result <- getBy $ UniqueStandardEmail "user1" Nothing
 
-                liftIO $ result `Lifted.shouldBe` Nothing
+                    liftIO $ result `Lifted.shouldBe` Nothing
 
-                -- Verify that getBy still works for non-NULL values
-                k2 <- insert $ StandardUnique "user2" (Just "test@example.com")
-                result2 <- getBy $ UniqueStandardEmail "user2" (Just "test@example.com")
+                    -- Verify that getBy still works for non-NULL values
+                    k2 <- insert $ StandardUnique "user2" (Just "test@example.com")
+                    result2 <- getBy $ UniqueStandardEmail "user2" (Just "test@example.com")
 
-                liftIO $ case result2 of
-                    Just (Entity key _) -> key `Lifted.shouldBe` k2
-                    Nothing -> Hspec.expectationFailure "getBy should find non-NULL values"
+                    liftIO $ case result2 of
+                        Just (Entity key _) -> key `Lifted.shouldBe` k2
+                        Nothing -> Hspec.expectationFailure "getBy should find non-NULL values"
 
         describe "PostgreSQL 15+ features" $ do
             it "NULLS NOT DISTINCT prevents multiple NULLs (PostgreSQL 15+)" $ do
