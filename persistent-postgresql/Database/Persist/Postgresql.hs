@@ -65,6 +65,9 @@ module Database.Persist.Postgresql
     , createRawPostgresqlPoolModifiedWithVersion
     , createRawPostgresqlPoolWithConf
     , createBackend
+    , createBackendLazyTx
+    , LazyTxState (..)
+    , lazyTxStateKey
     ) where
 
 import qualified Database.PostgreSQL.LibPQ as LibPQ
