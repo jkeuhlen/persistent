@@ -38,6 +38,7 @@ import qualified GeneratedColumnTestSQL
 import qualified HtmlTest
 import qualified ImplicitUuidSpec
 import qualified JSONTest
+import qualified LazyTransactionSpec
 import qualified LargeNumberTest
 import qualified LongIdentifierTest
 import qualified MaxLenTest
@@ -226,3 +227,4 @@ main = do
         PgIntervalTest.specs
         ArrayAggTest.specs
         GeneratedColumnTestSQL.specsWith runConnAssert
+        LazyTransactionSpec.spec
